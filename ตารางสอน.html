@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบตารางสอนอัจฉริยะ (Real-time)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Kanit', sans-serif;
+            background-color: #f1f5f9;
+            overflow-x: hidden;
+        }
+        /* การตั้งค่าเลย์เอาต์ */
+        .schedule-grid {
+            display: grid;
+            grid-template-columns: 100px 1fr;
+            min-width: 1000px;
+        }
+        .day-header {
+            min-height: 85px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.1rem;
+            border-bottom: 1px solid #e2e8f0;
+            background-color: #fff;
+            position: sticky;
+            left: 0;
+            z-index: 40;
+        }
+        .time-axis {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            height: 40px;
+            background-color: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+        .time-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #64748b;
+            border-right: 1px solid #f1f5f9;
+        }
+        .timeline-row {
+            min-height: 85px;
+            position: relative;
+            background-color: #fff;
+            border-bottom: 1px solid #e2e8f0;
+            background-image: linear-gradient(to right, #f1f5f9 1px, transparent 1px);
+            background-size: calc(100% / 9) 100%;
+            transition: min-height 0.3s ease;
+        }
+        .subject-card {
+            position: absolute;
+            border-radius: 10px;
+            padding: 6px 10px;
+            font-size: 0.85rem;
+            border-top: 4px solid;
+            box-shadow: 0 2px 4px -1px rgba(0,0,0,0.06);
+            transition: all 0.2s ease;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .subject-card:hover {
+            transform: scale(1.01);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            z-index: 100 !important;
+            filter: brightness(0.98);
+        }
+        
+        /* แอนิเมชัน */
+        @keyframes live-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        @keyframes blink {
+            50% { opacity: 0.3; }
+        }
+        .teaching-now {
+            animation: live-pulse 2s infinite;
+            border: 2px solid #ef4444 !important;
+            border-top-width: 5px !important;
+            z-index: 80 !important;
+            background-color: #fff1f2 !important;
+        }
+        .blink-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #ef4444;
+            border-radius: 50%;
+            display: inline-block;
+            animation: blink 1s infinite;
+            margin-right: 6px;
+        }
+
+        /* ธีมสีวิชา */
+        .theme-amber { background-color: #fffbeb; border-color: #fbbf24; color: #92400e; }
+        .theme-pink { background-color: #fdf2f8; border-color: #ec4899; color: #9d174d; }
+        .theme-emerald { background-color: #ecfdf5; border-color: #10b981; color: #065f46; }
+        .theme-orange { background-color: #fff7ed; border-color: #f97316; color: #9a3412; }
+        .theme-blue { background-color: #eff6ff; border-color: #3b82f6; color: #1e40af; }
+        .theme-red { background-color: #fef2f2; border-color: #ef4444; color: #991b1b; }
+        .theme-indigo { background-color: #eef2ff; border-color: #6366f1; color: #3730a3; }
+        .theme-cyan { background-color: #ecfeff; border-color: #06b6d4; color: #083344; }
+
+        /* Modal Custom Styling */
+        #subject-modal {
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-content {
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+        }
+        #subject-modal.active .modal-content {
+            transform: scale(1);
+        }
+    </style>
+</head>
+<body class="p-2 md:p-3">
+
+    <div class="max-w-[1600px] mx-auto">
+        <!-- ส่วนหัว -->
+        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-3 gap-3">
+            <div>
+                <h1 class="text-2xl font-extrabold text-slate-800 tracking-tight">Timeline ตารางสอน</h1>
+                <div class="mt-1 flex items-center gap-2">
+                    <div class="flex items-center gap-2 bg-white px-3 py-1 rounded-xl shadow-sm border border-slate-100">
+                        <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                        <span id="current-date-display" class="text-slate-600 text-sm font-medium"></span>
+                    </div>
+                    <div class="bg-slate-800 text-white px-3 py-1 rounded-xl shadow-md font-bold text-sm" id="current-time-display"></div>
+                </div>
+            </div>
+            
+            <div class="flex flex-wrap gap-2 w-full lg:w-auto">
+                <!-- การ์ดสถิติ -->
+                <div class="bg-white border border-slate-200 rounded-2xl px-4 py-2 flex items-center gap-4 shadow-sm">
+                    <div class="text-center border-r border-slate-100 pr-4">
+                        <p class="text-[9px] uppercase font-bold text-slate-400 tracking-wider">สอนสัปดาห์นี้</p>
+                        <p id="stats-week-hours" class="text-lg font-black text-slate-700">0 ชม.</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-[9px] uppercase font-bold text-slate-400 tracking-wider">เฉลี่ยต่อสัปดาห์</p>
+                        <p id="stats-avg-hours" class="text-lg font-black text-indigo-600">0 ชม.</p>
+                    </div>
+                </div>
+
+                <!-- สถานะถ่ายทอดสด -->
+                <div id="live-status-card" class="hidden bg-red-50 border-2 border-red-200 rounded-2xl px-4 py-2 flex items-center gap-3 shadow-md">
+                    <div class="flex items-center">
+                        <span class="blink-dot"></span>
+                        <span class="text-red-600 font-bold text-[10px] uppercase">Live</span>
+                    </div>
+                    <div class="border-l-2 border-red-200 pl-3">
+                        <p id="live-subject-name" class="text-xs font-bold text-red-900 truncate max-w-[120px]">-</p>
+                    </div>
+                </div>
+
+                <!-- การแจ้งเตือนข้อมูลรายสัปดาห์ -->
+                <div id="weekly-card" class="bg-indigo-600 rounded-2xl px-4 py-2 shadow-lg text-white flex items-center gap-3 transition-all duration-500">
+                    <div class="bg-indigo-500/50 p-1.5 rounded-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <div class="leading-none">
+                        <p id="weekly-label" class="text-[8px] font-medium text-indigo-200 uppercase tracking-widest mb-1">สถานะ</p>
+                        <p id="week-summary" class="text-sm font-bold italic">กำลังตรวจสอบ...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- กระดานไทม์ไลน์ -->
+        <div class="bg-white rounded-[1.5rem] shadow-xl border border-white overflow-x-auto overflow-y-hidden">
+            <div class="schedule-grid">
+                <div class="bg-slate-50 border-b border-slate-200 sticky left-0 z-[60]"></div>
+                
+                <div class="time-axis">
+                    <div class="time-label">08:00</div>
+                    <div class="time-label">09:00</div>
+                    <div class="time-label">10:00</div>
+                    <div class="time-label">11:00</div>
+                    <div class="time-label">12:00</div>
+                    <div class="time-label">13:00</div>
+                    <div class="time-label">14:00</div>
+                    <div class="time-label">15:00</div>
+                    <div class="time-label">16:00</div>
+                </div>
+
+                <div class="day-header text-amber-500 bg-amber-50/20">จันทร์</div>
+                <div class="timeline-row" id="day-1"></div>
+
+                <div class="day-header text-pink-500 bg-pink-50/20">อังคาร</div>
+                <div class="timeline-row" id="day-2"></div>
+
+                <div class="day-header text-emerald-500 bg-emerald-50/20">พุธ</div>
+                <div class="timeline-row" id="day-3"></div>
+
+                <div class="day-header text-orange-500 bg-orange-50/20">พฤหัสบดี</div>
+                <div class="timeline-row" id="day-4"></div>
+
+                <div class="day-header text-blue-500 bg-blue-50/20">ศุกร์</div>
+                <div class="timeline-row" id="day-5"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Detailed Dates -->
+    <div id="subject-modal" class="fixed inset-0 z-[100] flex items-center justify-center invisible opacity-0 bg-slate-900/60 backdrop-blur-sm p-4">
+        <div class="modal-content bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden">
+            <div id="modal-theme-bar" class="h-3 w-full"></div>
+            <div class="p-6">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <h2 id="modal-subject-name" class="text-xl font-bold text-slate-800 leading-tight">วิชาสอน</h2>
+                        <p id="modal-subject-time" class="text-sm text-slate-500 font-medium mt-1">เวลาเรียน</p>
+                    </div>
+                    <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 transition-colors bg-slate-100 p-2 rounded-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div>
+                        <h3 class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-2">ตารางวันที่ต้องสอนทั้งหมด</h3>
+                        <div id="modal-dates-list" class="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-2">
+                            <!-- Dates will be inserted here -->
+                        </div>
+                        <p id="no-dates-msg" class="text-sm text-slate-400 italic hidden">เป็นวิชาที่สอนเป็นประจำทุกสัปดาห์</p>
+                    </div>
+                    
+                    <div id="modal-note-container" class="bg-amber-50 p-3 rounded-xl border border-amber-100 hidden">
+                        <p class="text-[9px] uppercase font-bold text-amber-600 tracking-widest mb-1">หมายเหตุ</p>
+                        <p id="modal-note-text" class="text-sm text-amber-800"></p>
+                    </div>
+                </div>
+                
+                <button onclick="closeModal()" class="w-full mt-6 bg-slate-800 text-white py-3 rounded-xl font-bold hover:bg-slate-700 transition-colors shadow-lg">
+                    ตกลง
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const schedules = [
+            // จันทร์
+            { id: 1, day: 1, name: "PH5202E (ชั้น 4)", start: 8.0, end: 9.5, color: "amber", dates: ["2026-04-27", "2026-05-11", "2026-05-18", "2026-05-25", "2026-06-08", "2026-06-22"] },
+            { id: 2, day: 1, name: "PH1001 (ชั้น 1)", start: 8.0, end: 12.0, color: "orange", dates: ["2026-06-22", "2026-07-06", "2026-07-13", "2026-07-20", "2026-07-27", "2026-08-03"] },
+            { id: 3, day: 1, name: "ค้นคว้า/พบอาจารย์ที่ปรึกษา", start: 10.0, end: 12.0, color: "indigo", dates: [] },
+            { id: 4, day: 1, name: "PH5214 (ชั้น 4)", start: 13.0, end: 15.0, color: "amber", dates: ["2026-05-18", "2026-07-13"] },
+            { id: 5, day: 1, name: "ES3104 / ES3104E", start: 13.0, end: 14.5, color: "blue", dates: ["2026-07-20", "2026-07-27"] },
+            
+            // อังคาร
+            { id: 6, day: 2, name: "PH5202 SEL (เช้า)", start: 8.0, end: 9.5, color: "pink", dates: ["2026-04-28", "2026-05-05", "2026-05-12", "2026-05-19", "2026-05-26", "2026-06-02", "2026-06-09"] },
+            { id: 7, day: 2, name: "PH5202 SEL (สาย)", start: 10.5, end: 12.0, color: "pink", dates: ["2026-04-28", "2026-05-05", "2026-05-12", "2026-05-19", "2026-05-26", "2026-06-02", "2026-06-09"] },
+            
+            // พุธ
+            { id: 8, day: 3, name: "ค้นคว้า/พบอาจารย์ที่ปรึกษา", start: 13.0, end: 15.0, color: "indigo", dates: [] },
+            { id: 9, day: 3, name: "ฟิสิกส์ ม.4 รร.ธัญรัตน์", start: 14.33, end: 16.0, color: "emerald", dates: [], note: "รอยืนยันวันสอนที่แน่นอน" },
+            
+            // พฤหัสบดี
+            { id: 10, day: 4, name: "PH1002 (ชั้น 1)", start: 8.0, end: 12.0, color: "orange", dates: ["2026-04-30", "2026-05-07", "2026-05-14", "2026-05-21", "2026-06-04", "2026-06-11", "2026-06-25", "2026-07-09", "2026-07-16", "2026-07-23", "2026-08-06"] },
+            { id: 11, day: 4, name: "PH5202E (ชั้น 4)", start: 10.5, end: 12.0, color: "amber", dates: ["2026-04-30", "2026-05-07", "2026-05-14", "2026-05-21", "2026-06-04", "2026-06-11"] },
+            { id: 12, day: 4, name: "ค้นคว้า/พบอาจารย์ที่ปรึกษา", start: 13.0, end: 15.0, color: "indigo", dates: [] },
+            
+            // ศุกร์
+            { id: 13, day: 5, name: "ฟิสิกส์ 1 มจพ.ปราจีน", start: 9.0, end: 12.0, color: "cyan", dates: [], note: "รอยืนยันตาราง" },
+            { id: 14, day: 5, name: "ฟิสิกส์ 1 (ต่อ)", start: 13.0, end: 16.0, color: "cyan", dates: [] },
+            { id: 15, day: 5, name: "ES3104 / ES3104E", start: 13.0, end: 14.5, color: "blue", dates: ["2026-07-17", "2026-07-24"] },
+            { id: 16, day: 5, name: "อาวุธนิวเคลียร์ (เช้า)", start: 8.0, end: 9.5, color: "red", dates: ["2026-06-12"] },
+            { id: 17, day: 5, name: "อาวุธนิวเคลียร์ (สาย)", start: 10.5, end: 12.0, color: "red", dates: ["2026-06-12"] }
+        ];
+
+        const START_HOUR = 8;
+        const TOTAL_HOURS = 9;
+        const BASE_ROW_HEIGHT = 85;
+
+        function formatTimeDisplay(decimalHour) {
+            const h = Math.floor(decimalHour);
+            const m = Math.round((decimalHour - h) * 60);
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+        }
+
+        function formatThaiDateFull(dateStr) {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return "";
+            const days = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+            const months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+            return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
+        }
+
+        function formatThaiDateShort(dateStr) {
+            const d = new Date(dateStr);
+            const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+            return `${d.getDate()} ${months[d.getMonth()]}`;
+        }
+
+        function openModal(subjectId) {
+            const s = schedules.find(item => item.id === subjectId);
+            if (!s) return;
+
+            const modal = document.getElementById('subject-modal');
+            const themeBar = document.getElementById('modal-theme-bar');
+            const nameEl = document.getElementById('modal-subject-name');
+            const timeEl = document.getElementById('modal-subject-time');
+            const listEl = document.getElementById('modal-dates-list');
+            const noDatesMsg = document.getElementById('no-dates-msg');
+            const noteContainer = document.getElementById('modal-note-container');
+            const noteText = document.getElementById('modal-note-text');
+
+            // Set data
+            const colors = {
+                amber: "#fbbf24", pink: "#ec4899", emerald: "#10b981",
+                orange: "#f97316", blue: "#3b82f6", red: "#ef4444",
+                indigo: "#6366f1", cyan: "#06b6d4"
+            };
+            themeBar.style.backgroundColor = colors[s.color] || "#64748b";
+            nameEl.innerText = s.name;
+            timeEl.innerText = `${formatTimeDisplay(s.start)} - ${formatTimeDisplay(s.end)} น.`;
+
+            // List dates
+            listEl.innerHTML = '';
+            if (s.dates && s.dates.length > 0) {
+                noDatesMsg.classList.add('hidden');
+                s.dates.forEach(dStr => {
+                    const item = document.createElement('div');
+                    item.className = "bg-slate-50 border border-slate-100 p-2 rounded-lg text-xs font-medium text-slate-700 flex items-center gap-2";
+                    item.innerHTML = `<span class="w-1.5 h-1.5 rounded-full" style="background-color: ${colors[s.color]}"></span> ${formatThaiDateFull(dStr)}`;
+                    listEl.appendChild(item);
+                });
+            } else {
+                noDatesMsg.classList.remove('hidden');
+            }
+
+            // Note
+            if (s.note) {
+                noteContainer.classList.remove('hidden');
+                noteText.innerText = s.note;
+            } else {
+                noteContainer.classList.add('hidden');
+            }
+
+            // Show modal
+            modal.classList.add('active');
+            modal.style.visibility = 'visible';
+            modal.style.opacity = '1';
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('subject-modal');
+            modal.classList.remove('active');
+            modal.style.opacity = '0';
+            setTimeout(() => {
+                modal.style.visibility = 'hidden';
+            }, 300);
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('subject-modal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+
+        function renderTimeline() {
+            const now = new Date();
+            const currentDay = now.getDay() || 7;
+            const currentTime = now.getHours() + (now.getMinutes() / 60);
+            const todayStr = now.toISOString().split('T')[0];
+
+            const dayGroups = {};
+            schedules.forEach(s => {
+                if (!dayGroups[s.day]) dayGroups[s.day] = [];
+                dayGroups[s.day].push(s);
+            });
+
+            let currentTeachingSubject = null;
+
+            Object.keys(dayGroups).forEach(day => {
+                const items = dayGroups[day];
+                const rowEl = document.getElementById(`day-${day}`);
+                const headerEl = rowEl.previousElementSibling;
+                if (!rowEl) return;
+                rowEl.innerHTML = '';
+
+                const lanes = [];
+                const sortedItems = [...items].sort((a, b) => a.start - b.start);
+
+                sortedItems.forEach(subject => {
+                    let assignedLane = -1;
+                    for (let i = 0; i < lanes.length; i++) {
+                        const lastInLane = lanes[i][lanes[i].length - 1];
+                        if (subject.start >= lastInLane.end) {
+                            assignedLane = i;
+                            break;
+                        }
+                    }
+                    if (assignedLane === -1) {
+                        lanes.push([subject]);
+                        assignedLane = lanes.length - 1;
+                    } else {
+                        lanes[assignedLane].push(subject);
+                    }
+                    subject.lane = assignedLane;
+                });
+
+                const laneCount = lanes.length || 1;
+                const dynamicHeight = Math.max(BASE_ROW_HEIGHT, laneCount * 70);
+                rowEl.style.minHeight = `${dynamicHeight}px`;
+                headerEl.style.minHeight = `${dynamicHeight}px`;
+
+                items.forEach((s) => {
+                    const left = ((s.start - START_HOUR) / TOTAL_HOURS) * 100;
+                    const width = ((s.end - s.start) / TOTAL_HOURS) * 100;
+
+                    const card = document.createElement('div');
+                    card.className = `subject-card theme-${s.color}`;
+                    card.style.left = `calc(${left}% + 3px)`;
+                    card.style.width = `calc(${width}% - 6px)`;
+                    
+                    const cardHeight = (dynamicHeight / laneCount) - 8;
+                    card.style.height = `${cardHeight}px`;
+                    card.style.top = `${(s.lane * (dynamicHeight / laneCount)) + 4}px`;
+
+                    const isToday = s.dates.includes(todayStr) || (s.dates.length === 0 && s.day === currentDay);
+                    const isNow = isToday && (currentTime >= s.start && currentTime <= s.end);
+
+                    if (isNow) {
+                        card.classList.add('teaching-now');
+                        currentTeachingSubject = s;
+                    }
+
+                    card.onclick = () => openModal(s.id);
+
+                    const liveBadge = isNow ? `<span class="blink-dot"></span>` : "";
+                    const dateText = s.dates.length > 0
+                        ? `<div class="text-[9px] opacity-80 mt-1 line-clamp-1 font-medium italic">คลิกเพื่อดูวันที่สอนทั้งหมด</div>`
+                        : (s.note ? `<div class="text-[9px] opacity-80 mt-1 font-medium">${s.note}</div>` : "");
+
+                    card.innerHTML = `
+                        <div class="flex flex-col h-full justify-center">
+                            <div class="flex items-center gap-1 font-bold text-[13px] leading-tight mb-0.5">${liveBadge}${s.name}</div>
+                            ${dateText}
+                        </div>
+                    `;
+                    rowEl.appendChild(card);
+                });
+            });
+
+            const liveCard = document.getElementById('live-status-card');
+            if (currentTeachingSubject) {
+                liveCard.classList.remove('hidden');
+                document.getElementById('live-subject-name').innerText = currentTeachingSubject.name;
+            } else {
+                liveCard.classList.add('hidden');
+            }
+        }
+
+        function calculateStatistics() {
+            const now = new Date();
+            const totalWeeks = 15;
+
+            let weekStart = new Date(now);
+            if (now.getDay() === 0) {
+                weekStart.setDate(now.getDate() + 1);
+            } else {
+                weekStart.setDate(now.getDate() - (now.getDay() - 1));
+            }
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 6);
+
+            const thisWeekSubjects = schedules.filter(s => {
+                if (s.dates.length > 0) {
+                    return s.dates.some(dStr => {
+                        const d = new Date(dStr);
+                        return d >= weekStart && d <= weekEnd;
+                    });
+                }
+                return true;
+            });
+
+            const weekTotal = thisWeekSubjects.reduce((acc, s) => acc + (s.end - s.start), 0);
+            document.getElementById('stats-week-hours').innerText = weekTotal.toFixed(1) + " ชม.";
+
+            let termTotalHours = 0;
+            schedules.forEach(s => {
+                if (s.dates.length > 0) {
+                    termTotalHours += (s.end - s.start) * s.dates.length;
+                } else {
+                    termTotalHours += (s.end - s.start) * totalWeeks;
+                }
+            });
+
+            const avgPerWeek = termTotalHours / totalWeeks;
+            document.getElementById('stats-avg-hours').innerText = avgPerWeek.toFixed(1) + " ชม.";
+        }
+
+        function updateClockAndStatus() {
+            const now = new Date();
+            const fmt = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('current-date-display').innerText = now.toLocaleDateString('th-TH', fmt);
+            document.getElementById('current-time-display').innerText = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + " น.";
+
+            const isSunday = now.getDay() === 0;
+            const weekLabel = document.getElementById('weekly-label');
+            const weekSummary = document.getElementById('week-summary');
+            const weeklyCard = document.getElementById('weekly-card');
+
+            if (isSunday) {
+                weekLabel.innerText = "เตรียมตัว";
+                weekSummary.innerText = "สัปดาห์หน้า";
+                weeklyCard.classList.replace('bg-indigo-600', 'bg-emerald-600');
+            } else {
+                weekLabel.innerText = "สถานะ";
+                weekSummary.innerText = "สัปดาห์นี้";
+                weeklyCard.classList.replace('bg-emerald-600', 'bg-indigo-600');
+            }
+
+            calculateStatistics();
+            renderTimeline();
+        }
+
+        function initApp() {
+            updateClockAndStatus();
+            setInterval(updateClockAndStatus, 60000);
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
